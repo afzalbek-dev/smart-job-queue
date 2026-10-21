@@ -42,7 +42,7 @@ class TestSmartJobQueue(unittest.TestCase):
 
             queue.enqueue("ping", {"msg": "hello"})
             # max_retries=1 means it immediately goes to DEAD_LETTER after 1 failure
-            queue.enqueue("fail", {"msg": "fail"}, max_retries=1)
+            failing_job = queue.enqueue("fail", {"msg": "fail"}, max_retries=1)
 
             pool.start()
             await asyncio.sleep(0.1)
@@ -52,6 +52,15 @@ class TestSmartJobQueue(unittest.TestCase):
             stats = queue.stats()
             self.assertEqual(stats["completed"], 1)
             self.assertEqual(stats["dead_letter"], 1)
+
+            # Test DLQ inspection and retry
+            dlq_jobs = queue.get_dead_letter_jobs()
+            self.assertEqual(len(dlq_jobs), 1)
+            self.assertEqual(dlq_jobs[0].id, failing_job.id)
+
+            success = queue.retry_dead_letter_job(failing_job.id)
+            self.assertTrue(success)
+            self.assertEqual(queue.stats()["queued"], 1)
 
         asyncio.run(run_test())
 
